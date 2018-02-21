@@ -1,0 +1,29 @@
+spring:
+    profiles.active: development-local
+
+---
+spring:
+    profiles: production
+server:
+    port: 8081
+azure:
+    botframework.client:
+        id : <app_id>
+        secret : <app_secret>
+logging:
+  level:
+      com.ipland: info
+
+
+---
+spring:
+    profiles: development-local
+server:
+    port: 8080
+azure:
+    botframework.client:
+        id : <app_id>
+        secret : <app_secret>
+logging:
+  level:
+      com.ipland: trace
