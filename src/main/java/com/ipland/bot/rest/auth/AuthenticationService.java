@@ -21,10 +21,7 @@ import java.security.NoSuchAlgorithmException;
 import java.security.interfaces.RSAPublicKey;
 import java.security.spec.InvalidKeySpecException;
 import java.security.spec.RSAPublicKeySpec;
-import java.util.Base64;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -34,9 +31,9 @@ import static java.util.stream.Collectors.toMap;
 /**
  * Created by Ivan Zbykovskyi on 2/15/18.
  */
-@Service
 @Slf4j
 @Data
+@Service
 public class AuthenticationService {
 
     @Inject
@@ -65,7 +62,7 @@ public class AuthenticationService {
             log.info("Refreshed botframework access token");
             try {
                 Integer expiresIn = (Integer) response.get("expires_in") / 2;
-                log.info("Sleeping next access token refresh for {} seconds", expiresIn);
+                log.info("Sleeping to the next access token refresh for {} seconds", expiresIn);
                 TimeUnit.SECONDS.sleep(expiresIn);
             } catch (InterruptedException e) {
                 log.error("Token refresh service interrupted. Error --> {}", ExceptionUtils.getRootCauseMessage(e));
@@ -83,6 +80,8 @@ public class AuthenticationService {
               To get the OpenID metadata document, issue this request via HTTPS:
               GET https://login.botframework.com/v1/.well-known/openidconfiguration
             */
+            Map<String, RSAPublicKey> rsaSigningKeys = new HashMap<>();
+
             log.info("Getting openid configuration");
             Map response = restTemplate.getForObject("https://login.botframework.com/v1/.well-known/openidconfiguration", Map.class);
             String jwks_uri = (String) response.get("jwks_uri");
@@ -100,7 +99,7 @@ public class AuthenticationService {
                         log.warn("Emulator`s keyset not returned from {}", discoveryKeys_uri);
                     } else {
                         List<Map<String, String>> keys = (List<Map<String, String>>) keyset.get("keys");
-                        oauthTokenStore.getKeys().putAll(keys.stream().map(m -> Endorsement.convert(Collections.singletonList("emulator"), m)).flatMap(e -> e.stream()).collect(toMap(e -> e.getChannel() + "->" + e.getKey(), e -> e.getPublicKey())));
+                        rsaSigningKeys.putAll(keys.stream().map(m -> Endorsement.convert(Collections.singletonList("emulator"), m)).flatMap(e -> e.stream()).collect(toMap(e -> e.getChannel() + "->" + e.getKey(), e -> e.getPublicKey())));
                     }
                 }
                 log.info("Getting the list of valid signing keys from jwks_uri = {}", jwks_uri);
@@ -113,12 +112,13 @@ public class AuthenticationService {
                     Stream<Key> keyStream = keys.stream().map(k -> new Key((List<String>) k.get("endorsements"), k));
                     Stream<List<Endorsement>> endorsements = keyStream.map(key -> Endorsement.convert(key.getEndorsements(), key.getData()));
                     Map<String, RSAPublicKey> keyMap = endorsements.flatMap(e -> e.stream()).collect(toMap(e -> e.getChannel() + "->" + e.getKey(), e -> e.getPublicKey()));
-                    oauthTokenStore.getKeys().putAll(keyMap);
+                    rsaSigningKeys.putAll(keyMap);
                     log.info("Refreshed list of valid signing keys. Size = {}", keyMap.size());
                 }
+                oauthTokenStore.setKeys(rsaSigningKeys);
             }
             try {
-                log.info("Sleeping to next refresh list signing keys for {} days", 5);
+                log.info("Sleeping to the next refresh list signing keys for {} days", 5);
                 TimeUnit.DAYS.sleep(5);
             } catch (InterruptedException e) {
                 log.error("Sign keys refresh service interrupted. Error --> {}", ExceptionUtils.getRootCauseMessage(e));
